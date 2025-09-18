@@ -1,6 +1,3 @@
-import streamlit as st
-st.write("✅ app.py chargé correctement")
-
 import re, time
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qsl, urlencode
 
@@ -11,8 +8,10 @@ import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
 
+# ================== Config Streamlit (doit être en tout premier) ==================
+st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
+
 # ================== Parser fallback ==================
-# Par défaut on utilise lxml (rapide). Si non dispo, on passe à html.parser.
 PARSER = "lxml"
 try:
     import lxml  # noqa: F401
@@ -20,7 +19,6 @@ except Exception:
     PARSER = "html.parser"
 
 # ================== UI ==================
-st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
 st.title("🔗 RSS Outlinks Extractor")
 st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens sortants du texte.")
 
@@ -122,7 +120,7 @@ def extract_links(body_root: BeautifulSoup, base_url: str, base_domain: str,
 
 def parse_article(url: str, extern_only=True, only_paragraphs=True):
     resp = http_get(url)
-    soup = BeautifulSoup(resp.text, PARSER)  # <— utilise le parser fallback
+    soup = BeautifulSoup(resp.text, PARSER)  # <— parser fallback
     base_domain = tldextract.extract(url).registered_domain
 
     title = soup.select_one("h1")
@@ -225,4 +223,5 @@ if run_btn:
                            mime="text/csv")
 
     st.caption("Astuce : décoche « Ne garder que les liens dans les <p> » pour inclure les liens d’autres blocs (listes, blockquotes…).")
+
 
