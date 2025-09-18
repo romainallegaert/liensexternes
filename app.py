@@ -7,6 +7,8 @@ import tldextract
 import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
+st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
+
 
 # ================== Config Streamlit (doit être en tout premier) ==================
 st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
