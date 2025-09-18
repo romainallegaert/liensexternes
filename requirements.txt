@@ -1,7 +1,8 @@
-streamlit>=1.37,<1.39
-requests>=2.31
-beautifulsoup4>=4.12
-pandas>=2.2
-tldextract>=5.1
-feedparser>=6.0
+streamlit==1.37.1
+requests
+beautifulsoup4
+pandas
+tldextract
+feedparser
+
 
