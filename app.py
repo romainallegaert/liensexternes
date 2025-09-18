@@ -1,3 +1,6 @@
+import streamlit as st
+st.write("✅ app.py chargé correctement")
+
 import re, time
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qsl, urlencode
 
