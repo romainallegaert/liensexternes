@@ -8,7 +8,15 @@ import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
 
-# ------------------ UI ------------------
+# ================== Parser fallback ==================
+# Par défaut on utilise lxml (rapide). Si non dispo, on passe à html.parser.
+PARSER = "lxml"
+try:
+    import lxml  # noqa: F401
+except Exception:
+    PARSER = "html.parser"
+
+# ================== UI ==================
 st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
 st.title("🔗 RSS Outlinks Extractor")
 st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens sortants du texte.")
@@ -27,7 +35,7 @@ st.markdown("— Respecte le **robots.txt** et les **CGU**. Identifie-toi avec u
 UA = "RSS-Outlinks/1.0 (+contact: you@example.com)"
 HEADERS = {"User-Agent": UA}
 
-# ------------------ Utils ------------------
+# ================== Utils ==================
 def http_get(url, timeout=25):
     r = requests.get(url, headers=HEADERS, timeout=timeout)
     r.raise_for_status()
@@ -111,7 +119,7 @@ def extract_links(body_root: BeautifulSoup, base_url: str, base_domain: str,
 
 def parse_article(url: str, extern_only=True, only_paragraphs=True):
     resp = http_get(url)
-    soup = BeautifulSoup(resp.text, "lxml")
+    soup = BeautifulSoup(resp.text, PARSER)  # <— utilise le parser fallback
     base_domain = tldextract.extract(url).registered_domain
 
     title = soup.select_one("h1")
@@ -138,7 +146,7 @@ def parse_article(url: str, extern_only=True, only_paragraphs=True):
         "links": links,
     }
 
-# ------------------ Main action ------------------
+# ================== Main action ==================
 if run_btn:
     if not feed_url.strip():
         st.error("Merci de renseigner une URL de flux.")
@@ -214,3 +222,4 @@ if run_btn:
                            mime="text/csv")
 
     st.caption("Astuce : décoche « Ne garder que les liens dans les <p> » pour inclure les liens d’autres blocs (listes, blockquotes…).")
+
