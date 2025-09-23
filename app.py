@@ -7,18 +7,14 @@ import tldextract
 import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
-st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
 
-
-# ================== Config Streamlit (doit être en tout premier) ==================
-st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
-
-# ================== Parser fallback ==================
-PARSER = "lxml"
-try:
-    import lxml  # noqa: F401
-except Exception:
-    PARSER = "html.parser"
+# ---- CONFIG STREAMLIT (one-shot, safe) ----
+if "page_cfg_done" not in st.session_state:
+    try:
+        st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
+    finally:
+        # qu'il réussisse ou non, on évite de rappeler set_page_config aux reruns
+        st.session_state["page_cfg_done"] = True
 
 # ================== UI ==================
 st.title("🔗 RSS Outlinks Extractor")
