@@ -15,6 +15,13 @@ if "page_cfg_done" not in st.session_state:
     finally:
         # qu'il réussisse ou non, on évite de rappeler set_page_config aux reruns
         st.session_state["page_cfg_done"] = True
+        # ---- Parser fallback (lxml si dispo, sinon html.parser) ----
+PARSER = "lxml"
+try:
+    import lxml  # noqa: F401  # si lxml est installé, on l'utilise (plus rapide)
+except Exception:
+    PARSER = "html.parser"      # sinon, parser standard de Python
+
 
 # ================== UI ==================
 st.title("🔗 RSS Outlinks Extractor")
