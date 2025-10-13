@@ -29,12 +29,19 @@ st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens 
 
 with st.sidebar:
     st.header("Paramètres")
-    feed_url = st.text_input("URL du flux RSS/Atom", value="https://lesdjadjas.fr/feed/")
-    max_items = st.number_input("Nombre max d'articles à traiter", min_value=1, max_value=1000, value=50, step=1)
+    feeds_text = st.text_area(
+        "Liste d'URLs de flux (un par ligne)",
+        value="https://lesdjadjas.fr/feed/\nhttps://www.carredinfo.fr/feed/"
+    )
+    max_items = st.number_input("Nombre max d'articles par flux", 1, 1000, 50, 1)
     delay_sec = st.slider("Pause entre articles (politesse)", 0.0, 5.0, 1.0, 0.5)
     external_only = st.checkbox("Garder uniquement les liens externes", value=True)
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
-    run_btn = st.button("Analyser le flux")
+    run_btn = st.button("Analyser tous les flux")
+
+# On transforme le texte en vraie liste Python
+feeds = [u.strip() for u in feeds_text.splitlines() if u.strip()]
+
 
 st.markdown("— Respecte le **robots.txt** et les **CGU**. Identifie-toi avec un User-Agent. Limite le débit. —")
 
@@ -154,57 +161,70 @@ def parse_article(url: str, extern_only=True, only_paragraphs=True):
 
 # ================== Main action ==================
 if run_btn:
-    if not feed_url.strip():
-        st.error("Merci de renseigner une URL de flux.")
+    if not feeds:
+        st.error("Merci d'indiquer au moins un flux RSS/Atom (un par ligne).")
         st.stop()
 
-    with st.spinner("Lecture du flux…"):
-        feed = feedparser.parse(feed_url)
-        entries = list(getattr(feed, "entries", []))
-        entries = entries[:max_items]
+    articles_rows, links_rows = [], []
+    total_items = 0
 
-    if not entries:
-        st.warning("Aucun item dans le flux (ou flux illisible).")
+    # Lecture de tous les flux
+    feeds_entries = []
+    with st.spinner("Lecture des flux…"):
+        for f in feeds:
+            feed = feedparser.parse(f)
+            entries = list(getattr(feed, "entries", []))[:max_items]
+            feeds_entries.append((f, entries))
+            total_items += len(entries)
+
+    if total_items == 0:
+        st.warning("Aucun item trouvé dans les flux fournis.")
         st.stop()
 
-    progress = st.progress(0)
+    progress = st.progress(0.0)
     status = st.empty()
+    done = 0
 
-    articles_rows = []
-    links_rows = []
-
-    for i, entry in enumerate(entries, 1):
-        art_url = safe_get_article_url(entry)
-        if not art_url:
-            status.write(f"⏭️ Item {i}: pas d’URL d’article")
-            continue
-        try:
-            data = parse_article(
-                art_url,
-                extern_only=external_only,
-                only_paragraphs=restrict_to_paragraphs
-            )
-            articles_rows.append({
-                "article_url": data["article_url"],
-                "article_title": data["article_title"],
-                "article_author": data["article_author"],
-                "article_date": data["article_date"],
-                "outbound_count": data["outbound_count"],
-                "outbound_domains": data["outbound_domains"],
-            })
-            for l in data["links"]:
-                links_rows.append({
+    for feed_url, entries in feeds_entries:
+        for entry in entries:
+            art_url = safe_get_article_url(entry)
+            if not art_url:
+                status.write(f"⏭️ {feed_url}: item sans URL d’article")
+                done += 1
+                progress.progress(done / total_items)
+                continue
+            try:
+                data = parse_article(
+                    art_url,
+                    extern_only=external_only,
+                    only_paragraphs=restrict_to_paragraphs
+                )
+                # On ajoute la source du flux
+                articles_rows.append({
+                    "feed": feed_url,
                     "article_url": data["article_url"],
                     "article_title": data["article_title"],
-                    "out_url": l["url"],
-                    "out_anchor": l["anchor"],
-                    "out_domain": tldextract.extract(l["url"]).registered_domain
+                    "article_author": data["article_author"],
+                    "article_date": data["article_date"],
+                    "outbound_count": data["outbound_count"],
+                    "outbound_domains": data["outbound_domains"],
                 })
-            status.write(f"✅ {i}/{len(entries)} — {data['article_title'][:80]}…  ({data['outbound_count']} lien(s))")
-        except Exception as e:
-            status.write(f"❌ {i}/{len(entries)} — {art_url} — {e}")
-        progress.progress(i / len(entries))
-        time.sleep(delay_sec)
+                for l in data["links"]:
+                    links_rows.append({
+                        "feed": feed_url,
+                        "article_url": data["article_url"],
+                        "article_title": data["article_title"],
+                        "out_url": l["url"],
+                        "out_anchor": l["anchor"],
+                        "out_domain": tldextract.extract(l["url"]).registered_domain
+                    })
+                status.write(f"✅ {feed_url} — {data['article_title'][:80]}…  ({data['outbound_count']} lien(s))")
+            except Exception as e:
+                status.write(f"❌ {feed_url} — {art_url} — {e}")
+
+            done += 1
+            progress.progress(done / total_items)
+            time.sleep(delay_sec)
 
     st.success("Terminé !")
 
@@ -227,6 +247,7 @@ if run_btn:
                            file_name="rss_outlinks_flat.csv",
                            mime="text/csv")
 
-    st.caption("Astuce : décoche « Ne garder que les liens dans les <p> » pour inclure les liens d’autres blocs (listes, blockquotes…).")
+    st.caption("Astuce : mets autant d’URLs de flux que tu veux (une par ligne).")
+
 
 
