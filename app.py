@@ -97,7 +97,7 @@ st.title("🔗 RSS Outlinks Extractor")
 st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens sortants du texte.")
 
 with st.sidebar:
-    with st.sidebar:
+    
     st.header("Paramètres")
 
     mode = st.radio("Mode d’analyse", ["Flux RSS", "Sitemap"], index=0)
