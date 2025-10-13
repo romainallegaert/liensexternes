@@ -273,7 +273,7 @@ if run_btn:
             progress.progress(done / total_items)
             time.sleep(delay_sec)
 
-     st.success("Terminé !")
+    st.success("Terminé !")
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
