@@ -273,11 +273,12 @@ if run_btn:
             progress.progress(done / total_items)
             time.sleep(delay_sec)
 
-    st.success("Terminé !")
+     st.success("Terminé !")
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
-        # ==== Enrichissement WHOIS par domaine unique ====
+
+    # ==== Enrichissement WHOIS par domaine unique ====
     if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
         st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
         unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
