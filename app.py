@@ -21,6 +21,17 @@ try:
     import lxml  # noqa: F401  # si lxml est installé, on l'utilise (plus rapide)
 except Exception:
     PARSER = "html.parser"      # sinon, parser standard de Python
+# ---- Parser fallback ----
+PARSER = "lxml"
+try:
+    import lxml  # noqa: F401
+except Exception:
+    PARSER = "html.parser"
+
+# ⬇️ CES DEUX LIGNES SANS AUCUNE INDENTATION
+WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
+WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
+st.caption(f"DBG WHOIS key loaded: {'yes' if 'WHOIS_API_KEY' in globals() and WHOIS_API_KEY else 'no'}")
 
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
