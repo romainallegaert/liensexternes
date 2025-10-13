@@ -24,7 +24,7 @@ except Exception:
 # ==== WHOIS (WhoisXMLAPI) ====
 # Ajoute ta clé dans Streamlit Cloud > Settings > Secrets :
 # WHOIS_API_KEY="ta_cle_api"
-WHOIS_API_KEY = st.secrets.get("WHOIS_API_KEY", "")
+WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
 WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
