@@ -277,46 +277,43 @@ if run_btn:
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
-    # ==== WHOIS (WhoisXMLAPI) ====
-# Ajoute ta clé dans Streamlit Cloud > Settings > Secrets :
-# WHOIS_API_KEY="ta_cle_api"
-WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
-WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
-    # ==== Enrichissement WHOIS par domaine unique ====
-if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
-    st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
-    unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
+        # ==== Enrichissement WHOIS par domaine unique ====
+    if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
+        st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
+        unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
 
-    whois_rows = []
-    for d in unique_domains:
-        info = fetch_whois(d)  # résultat en cache 12h
-        info["out_domain"] = d
-        whois_rows.append(info)
-        time.sleep(0.5)  # douceur pour l’API free tier; ajuste si besoin
+        whois_rows = []
+        for d in unique_domains:
+            info = fetch_whois(d)  # résultat en cache 12h
+            info["out_domain"] = d
+            whois_rows.append(info)
+            time.sleep(0.5)  # douceur pour l’API free tier; ajuste si besoin
 
-    whois_df = pd.DataFrame(whois_rows)
-    if not whois_df.empty:
-        # on rajoute les colonnes whois_* dans df_links
-        df_links = df_links.merge(whois_df, on="out_domain", how="left")
-
+        whois_df = pd.DataFrame(whois_rows)
+        if not whois_df.empty:
+            # on rajoute les colonnes whois_* dans df_links
+            df_links = df_links.merge(whois_df, on="out_domain", how="left")
 
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Articles")
         st.dataframe(df_articles, use_container_width=True, hide_index=True)
-        st.download_button("⬇️ Télécharger (CSV articles)",
-                           df_articles.to_csv(index=False).encode("utf-8"),
-                           file_name="rss_outlinks_by_article.csv",
-                           mime="text/csv")
+        st.download_button(
+            "⬇️ Télécharger (CSV articles)",
+            df_articles.to_csv(index=False).encode("utf-8"),
+            file_name="rss_outlinks_by_article.csv",
+            mime="text/csv"
+        )
     with col2:
         st.subheader("Liens sortants (1 ligne par lien)")
         st.dataframe(df_links, use_container_width=True, hide_index=True)
-        st.download_button("⬇️ Télécharger (CSV liens)",
-                           df_links.to_csv(index=False).encode("utf-8"),
-                           file_name="rss_outlinks_flat.csv",
-                           mime="text/csv")
+        st.download_button(
+            "⬇️ Télécharger (CSV liens)",
+            df_links.to_csv(index=False).encode("utf-8"),
+            file_name="rss_outlinks_flat.csv",
+            mime="text/csv"
+        )
 
     st.caption("Astuce : mets autant d’URLs de flux que tu veux (une par ligne).")
 
-
-
+   
