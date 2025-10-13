@@ -21,11 +21,7 @@ try:
     import lxml  # noqa: F401  # si lxml est installé, on l'utilise (plus rapide)
 except Exception:
     PARSER = "html.parser"      # sinon, parser standard de Python
-# ==== WHOIS (WhoisXMLAPI) ====
-# Ajoute ta clé dans Streamlit Cloud > Settings > Secrets :
-# WHOIS_API_KEY="ta_cle_api"
-WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
-WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
+
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
 def fetch_whois(domain: str) -> dict:
@@ -281,6 +277,11 @@ if run_btn:
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
+    # ==== WHOIS (WhoisXMLAPI) ====
+# Ajoute ta clé dans Streamlit Cloud > Settings > Secrets :
+# WHOIS_API_KEY="ta_cle_api"
+WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
+WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
     # ==== Enrichissement WHOIS par domaine unique ====
 if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
     st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
