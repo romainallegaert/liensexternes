@@ -8,6 +8,13 @@ import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
 
+# 🆕 Ajoute ces imports pour le crawl
+import gzip
+import io
+import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
+import urllib.robotparser as robotparser
+
 # ---- CONFIG STREAMLIT (one-shot, safe) ----
 if "page_cfg_done" not in st.session_state:
     try:
