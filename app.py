@@ -381,87 +381,44 @@ def scrape_sitemap_url(sm_url: str, max_urls: int) -> list[str]:
         return []
 
    # ================== Main action ==================
+# ================== Main action ==================
 if run_btn:
     articles_rows, links_rows = [], []
     status = st.empty()
     progress = st.progress(0.0)
 
     if mode == "Flux RSS":
-        # --- Vérifs & lecture des flux ---
-        if not feeds:
-            st.error("Merci d'indiquer au moins un flux RSS/Atom (un par ligne).")
-            st.stop()
-
-        feeds_entries = []
-        with st.spinner("Lecture des flux…"):
-            for f in feeds:
-                feed = feedparser.parse(f)
-                entries = list(getattr(feed, "entries", []))[:max_items]
-                feeds_entries.append((f, entries))
-
-        total_items = sum(len(es) for _, es in feeds_entries)
-        if total_items == 0:
-            st.warning("Aucun item trouvé dans les flux fournis.")
-            st.stop()
-
-        done = 0
-        for feed_url, entries in feeds_entries:
-            for entry in entries:
-                art_url = safe_get_article_url(entry)
-                if not art_url:
-                    status.write(f"⏭️ {feed_url}: item sans URL d’article")
-                    done += 1
-                    progress.progress(done / total_items)
-                    continue
-                try:
-                    data = parse_article(
-                        art_url,
-                        extern_only=external_only,
-                        only_paragraphs=restrict_to_paragraphs
-                    )
-                    articles_rows.append({
-                        "feed": feed_url,
-                        "article_url": data["article_url"],
-                        "article_title": data["article_title"],
-                        "article_author": data["article_author"],
-                        "article_date": data["article_date"],
-                        "outbound_count": data["outbound_count"],
-                        "outbound_domains": data["outbound_domains"],
-                    })
-                    for l in data["links"]:
-                        links_rows.append({
-                            "feed": feed_url,
-                            "article_url": data["article_url"],
-                            "article_title": data["article_title"],
-                            "out_url": l["url"],
-                            "out_anchor": l["anchor"],
-                            "out_domain": tldextract.extract(l["url"]).registered_domain
-                        })
-                    status.write(f"✅ {feed_url} — {data['article_title'][:80]}… ({data['outbound_count']} lien(s))")
-                except Exception as e:
-                    status.write(f"❌ {feed_url} — {art_url} — {e}")
-                done += 1
-                progress.progress(done / total_items)
-                time.sleep(delay_sec)
-
+        # --- ta logique RSS EXISTANTE ici (inchangée) ---
+        ...
     else:
-        # --------- Mode Crawl site -----------
-        if not start_url.strip():
-            st.error("Merci de saisir une URL de départ.")
-            st.stop()
-
-        st.write("🔎 Recherche des pages à analyser…")
+        # --------- Mode Sitemap ----------
         pages = []
-        if use_sitemap_first:
-            pages = fetch_sitemap_urls(start_url, max_urls=int(max_pages))
-        if not pages:
-            pages = crawl_site(start_url, max_pages=int(max_pages), delay=delay_sec)
+
+        # 1) Liste manuelle prioritaire
+        manual_list = [u.strip() for u in manual_urls_text.splitlines() if u.strip()]
+        if manual_list:
+            pages = manual_list[: int(max_pages)]
+        # 2) Fichier uploadé
+        elif uploaded_sm is not None:
+            pages = parse_sitemap_bytes(uploaded_sm.read())
+            # dédoublonnage + limite
+            seen, tmp = set(), []
+            for u in pages:
+                if u not in seen:
+                    seen.add(u)
+                    tmp.append(u)
+                    if len(tmp) >= int(max_pages):
+                        break
+            pages = tmp
+        # 3) URL de sitemap
+        elif sitemap_url.strip():
+            pages = scrape_sitemap_url(sitemap_url.strip(), max_urls=int(max_pages))
 
         if not pages:
-            st.warning("Aucune page trouvée (sitemap inexistant et crawl impossible ?).")
+            st.warning("Aucune URL récupérée (vérifie l’URL du sitemap, le fichier ou la liste manuelle).")
             st.stop()
 
-        st.write(f"🌐 {len(pages)} page(s) à analyser")
+        st.write(f"🌐 {len(pages)} URL(s) à analyser via sitemap")
         for i, url in enumerate(pages, 1):
             try:
                 data = parse_article(
@@ -470,7 +427,7 @@ if run_btn:
                     only_paragraphs=restrict_to_paragraphs
                 )
                 articles_rows.append({
-                    "feed": "(crawl)",
+                    "feed": "(sitemap)",
                     "article_url": data["article_url"],
                     "article_title": data["article_title"],
                     "article_author": data["article_author"],
@@ -480,7 +437,7 @@ if run_btn:
                 })
                 for l in data["links"]:
                     links_rows.append({
-                        "feed": "(crawl)",
+                        "feed": "(sitemap)",
                         "article_url": data["article_url"],
                         "article_title": data["article_title"],
                         "out_url": l["url"],
@@ -493,11 +450,47 @@ if run_btn:
             progress.progress(i / len(pages))
             time.sleep(delay_sec)
 
-    # --------- commun aux deux modes ---------
+    # --------- Commun (WHOIS + tableaux/CSV) ----------
     st.success("Terminé !")
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
+
+    if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
+        st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
+        unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
+        whois_rows = []
+        for d in unique_domains:
+            info = fetch_whois(d)
+            info["out_domain"] = d
+            whois_rows.append(info)
+            time.sleep(0.5)
+        whois_df = pd.DataFrame(whois_rows)
+        if not whois_df.empty:
+            df_links = df_links.merge(whois_df, on="out_domain", how="left")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Articles")
+        st.dataframe(df_articles, use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇️ Télécharger (CSV articles)",
+            df_articles.to_csv(index=False).encode("utf-8"),
+            file_name="rss_outlinks_by_article.csv",
+            mime="text/csv"
+        )
+    with col2:
+        st.subheader("Liens sortants (1 ligne par lien)")
+        st.dataframe(df_links, use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇️ Télécharger (CSV liens)",
+            df_links.to_csv(index=False).encode("utf-8"),
+            file_name="rss_outlinks_flat.csv",
+            mime="text/csv"
+        )
+
+    st.caption("Astuce : colle une *liste d’URLs* si tu veux cibler une catégorie précise.")
+
 
     # ==== Enrichissement WHOIS par domaine unique ====
     if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
