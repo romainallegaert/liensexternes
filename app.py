@@ -15,6 +15,10 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 import urllib.robotparser as robotparser
 
+import xml.etree.ElementTree as ET
+import gzip
+
+
 # ---- CONFIG STREAMLIT (one-shot, safe) ----
 if "page_cfg_done" not in st.session_state:
     try:
@@ -93,10 +97,10 @@ st.title("🔗 RSS Outlinks Extractor")
 st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens sortants du texte.")
 
 with st.sidebar:
+    with st.sidebar:
     st.header("Paramètres")
 
-    # 👇 Choix du mode
-    mode = st.radio("Mode d’analyse", ["Flux RSS", "Crawl site"], index=0)
+    mode = st.radio("Mode d’analyse", ["Flux RSS", "Sitemap"], index=0)
 
     if mode == "Flux RSS":
         feeds_text = st.text_area(
@@ -105,24 +109,17 @@ with st.sidebar:
         )
         max_items = st.number_input("Nombre max d'articles par flux", 1, 1000, 50, 1)
     else:
-        start_url = st.text_input(
-            "URL de départ (page d’accueil ou article)",
-            value="https://lesdjadjas.fr/"
-        )
-        use_sitemap_first = st.checkbox("Tenter le sitemap.xml d’abord", value=True)
-        max_pages = st.number_input("Nombre max de pages à crawler", 10, 2000, 150, 10)
+        sitemap_url = st.text_input("URL de la sitemap (xml ou gz)", value="https://lesdjadjas.fr/sitemap.xml")
+        uploaded_sm = st.file_uploader("…ou dépose le fichier sitemap (xml / gz)", type=["xml", "gz"], accept_multiple_files=False)
+        manual_urls_text = st.text_area("…ou colle directement une liste d’URLs (une par ligne)", value="", height=120)
+        max_pages = st.number_input("Nombre max d’URLs à analyser", 10, 20000, 300, 10)
 
     delay_sec = st.slider("Pause entre pages (politesse)", 0.0, 5.0, 1.0, 0.5)
     external_only = st.checkbox("Garder uniquement les liens externes", value=True)
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
 
     run_btn = st.button("Analyser")
-# Si on est en mode RSS, on transforme la zone de texte en liste d'URLs
-feeds = [u.strip() for u in (feeds_text.splitlines() if mode == "Flux RSS" else []) if u.strip()]
 
-
-
-st.markdown("— Respecte le **robots.txt** et les **CGU**. Identifie-toi avec un User-Agent. Limite le débit. —")
 
 UA = "RSS-Outlinks/1.0 (+contact: you@example.com)"
 HEADERS = {"User-Agent": UA}
@@ -327,6 +324,61 @@ def crawl_site(start_url: str, max_pages: int = 100, delay: float = 1.0):
     return pages
 
 # ================== Main action ==================
+def parse_sitemap_bytes(content: bytes) -> list[str]:
+    """Retourne les URLs d'un sitemap (index ou urlset) à partir de son contenu brut (xml ou gz)."""
+    try:
+        # si on nous passe directement du .gz
+        try:
+            content = gzip.decompress(content)
+        except Exception:
+            pass
+
+        root = ET.fromstring(content)
+        ns = ""
+        if root.tag.startswith("{"):
+            ns = root.tag.split("}")[0] + "}"
+
+        urls = []
+
+        # sitemap index -> récursion
+        for el in root.findall(f".//{ns}sitemap/{ns}loc"):
+            loc = (el.text or "").strip()
+            if not loc:
+                continue
+            try:
+                r = requests.get(loc, headers=HEADERS, timeout=20)
+                r.raise_for_status()
+                urls.extend(parse_sitemap_bytes(r.content))
+            except Exception:
+                pass
+
+        # urlset direct
+        for el in root.findall(f".//{ns}url/{ns}loc"):
+            loc = (el.text or "").strip()
+            if loc:
+                urls.append(clean_url(loc))
+
+        return urls
+    except Exception:
+        return []
+
+def scrape_sitemap_url(sm_url: str, max_urls: int) -> list[str]:
+    """Télécharge une sitemap par URL (xml ou gz) et renvoie jusqu'à max_urls URLs dédupliquées."""
+    try:
+        resp = requests.get(sm_url, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        all_urls = parse_sitemap_bytes(resp.content)
+        # dédoublonnage + limite
+        seen, out = set(), []
+        for u in all_urls:
+            if u not in seen:
+                seen.add(u)
+                out.append(u)
+                if len(out) >= max_urls:
+                    break
+        return out
+    except Exception:
+        return []
 
    # ================== Main action ==================
 if run_btn:
