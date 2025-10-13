@@ -21,6 +21,57 @@ try:
     import lxml  # noqa: F401  # si lxml est installé, on l'utilise (plus rapide)
 except Exception:
     PARSER = "html.parser"      # sinon, parser standard de Python
+# ==== WHOIS (WhoisXMLAPI) ====
+# Ajoute ta clé dans Streamlit Cloud > Settings > Secrets :
+# WHOIS_API_KEY="ta_cle_api"
+WHOIS_API_KEY = st.secrets.get("WHOIS_API_KEY", "")
+WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
+
+@st.cache_data(show_spinner=False, ttl=60*60*12)
+def fetch_whois(domain: str) -> dict:
+    """Retourne quelques champs WHOIS (email, registrar, dates) pour un domaine.
+       Résultat mis en cache 12h pour éviter les appels répétés."""
+    if not WHOIS_API_KEY or not domain:
+        return {}
+    try:
+        r = requests.get(
+            WHOIS_BASE,
+            params={
+                "apiKey": WHOIS_API_KEY,
+                "domainName": domain,
+                "outputFormat": "JSON",
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        rec = (r.json() or {}).get("WhoisRecord", {}) or {}
+
+        # Email: on essaie plusieurs emplacements possibles
+        email = (
+            rec.get("contactEmail")
+            or (rec.get("registrant") or {}).get("email")
+            or (rec.get("administrativeContact") or {}).get("email")
+            or (rec.get("technicalContact") or {}).get("email")
+            or ""
+        )
+
+        registrar = (
+            rec.get("registrarName")
+            or (rec.get("registrar") or {}).get("name")
+            or ""
+        )
+        created = rec.get("createdDate") or rec.get("createdDateNormalized") or ""
+        expires = rec.get("expiresDate") or rec.get("expiresDateNormalized") or ""
+
+        return {
+            "whois_email": email,
+            "whois_registrar": registrar,
+            "domain_created": created,
+            "domain_expires": expires,
+        }
+    except Exception:
+        # En cas d’erreur, on renvoie un dict vide (l’app continue)
+        return {}
 
 
 # ================== UI ==================
@@ -230,6 +281,23 @@ if run_btn:
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
+    # ==== Enrichissement WHOIS par domaine unique ====
+if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
+    st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
+    unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
+
+    whois_rows = []
+    for d in unique_domains:
+        info = fetch_whois(d)  # résultat en cache 12h
+        info["out_domain"] = d
+        whois_rows.append(info)
+        time.sleep(0.5)  # douceur pour l’API free tier; ajuste si besoin
+
+    whois_df = pd.DataFrame(whois_rows)
+    if not whois_df.empty:
+        # on rajoute les colonnes whois_* dans df_links
+        df_links = df_links.merge(whois_df, on="out_domain", how="left")
+
 
     col1, col2 = st.columns(2)
     with col1:
