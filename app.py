@@ -94,18 +94,32 @@ st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens 
 
 with st.sidebar:
     st.header("Paramètres")
-    feeds_text = st.text_area(
-        "Liste d'URLs de flux (un par ligne)",
-        value="https://lesdjadjas.fr/feed/\nhttps://www.carredinfo.fr/feed/"
-    )
-    max_items = st.number_input("Nombre max d'articles par flux", 1, 1000, 50, 1)
-    delay_sec = st.slider("Pause entre articles (politesse)", 0.0, 5.0, 1.0, 0.5)
+
+    # 👇 Choix du mode
+    mode = st.radio("Mode d’analyse", ["Flux RSS", "Crawl site"], index=0)
+
+    if mode == "Flux RSS":
+        feeds_text = st.text_area(
+            "Liste d'URLs de flux (un par ligne)",
+            value="https://lesdjadjas.fr/feed/\nhttps://www.carredinfo.fr/feed/"
+        )
+        max_items = st.number_input("Nombre max d'articles par flux", 1, 1000, 50, 1)
+    else:
+        start_url = st.text_input(
+            "URL de départ (page d’accueil ou article)",
+            value="https://lesdjadjas.fr/"
+        )
+        use_sitemap_first = st.checkbox("Tenter le sitemap.xml d’abord", value=True)
+        max_pages = st.number_input("Nombre max de pages à crawler", 10, 2000, 150, 10)
+
+    delay_sec = st.slider("Pause entre pages (politesse)", 0.0, 5.0, 1.0, 0.5)
     external_only = st.checkbox("Garder uniquement les liens externes", value=True)
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
-    run_btn = st.button("Analyser tous les flux")
 
-# On transforme le texte en vraie liste Python
-feeds = [u.strip() for u in feeds_text.splitlines() if u.strip()]
+    run_btn = st.button("Analyser")
+# Si on est en mode RSS, on transforme la zone de texte en liste d'URLs
+feeds = [u.strip() for u in (feeds_text.splitlines() if mode == "Flux RSS" else []) if u.strip()]
+
 
 
 st.markdown("— Respecte le **robots.txt** et les **CGU**. Identifie-toi avec un User-Agent. Limite le débit. —")
@@ -223,50 +237,188 @@ def parse_article(url: str, extern_only=True, only_paragraphs=True):
         "outbound_domains": "; ".join(domains),
         "links": links,
     }
+# ================== Fonctions de crawl (site complet) ==================
+
+def same_domain(u1: str, u2: str) -> bool:
+    d1 = tldextract.extract(u1).registered_domain
+    d2 = tldextract.extract(u2).registered_domain
+    return d1 and d2 and d1 == d2
+
+def try_load_robots(start_url: str, ua: str = "RSS-Outlinks/1.0"):
+    try:
+        p = robotparser.RobotFileParser()
+        parsed = urlparse(start_url)
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        p.set_url(robots_url)
+        p.read()
+        return p
+    except Exception:
+        return None
+
+def allowed_by_robots(robots, url: str, ua: str = "RSS-Outlinks/1.0") -> bool:
+    try:
+        if robots is None:
+            return True
+        return robots.can_fetch(ua, url)
+    except Exception:
+        return True
+
+def find_internal_links(page_url: str, html: str):
+    soup = BeautifulSoup(html, PARSER)
+    links = set()
+    for a in soup.select("a[href]"):
+        href = (a.get("href") or "").strip()
+        abs_url = urljoin(page_url, href)
+        if abs_url.startswith(("mailto:", "tel:", "javascript:", "#")):
+            continue
+        if same_domain(page_url, abs_url):
+            links.add(clean_url(abs_url))
+    return links
+
+def fetch_sitemap_urls(site_url: str, max_urls: int = 500):
+    """Essaie de lire le sitemap.xml d’un site pour extraire des URLs."""
+    try:
+        parsed = urlparse(site_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        sm_url = urljoin(base, "/sitemap.xml")
+        r = requests.get(sm_url, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        content = r.content
+        # Support des fichiers gzip
+        if r.headers.get("Content-Type", "").lower().startswith("application/gzip") or sm_url.endswith(".gz"):
+            content = gzip.decompress(content)
+        root = ET.fromstring(content)
+        ns = ""
+        if root.tag.startswith("{"):
+            ns = root.tag.split("}")[0] + "}"
+        urls = []
+        for loc in root.findall(f".//{ns}url/{ns}loc"):
+            if loc.text:
+                urls.append(clean_url(loc.text.strip()))
+                if len(urls) >= max_urls:
+                    break
+        return urls
+    except Exception:
+        return []
+
+def crawl_site(start_url: str, max_pages: int = 100, delay: float = 1.0):
+    """Petit crawler qui explore les liens internes d’un site jusqu’à max_pages."""
+    seen = set()
+    queue = [clean_url(start_url)]
+    robots = try_load_robots(start_url, UA)
+    pages = []
+
+    while queue and len(pages) < max_pages:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        if not allowed_by_robots(robots, url, UA):
+            continue
+        try:
+            r = http_get(url)
+            pages.append(url)
+            for link in find_internal_links(url, r.text):
+                if link not in seen and same_domain(start_url, link):
+                    queue.append(link)
+        except Exception:
+            pass
+        time.sleep(delay)
+    return pages
 
 # ================== Main action ==================
+
+   # ================== Main action ==================
 if run_btn:
-    if not feeds:
-        st.error("Merci d'indiquer au moins un flux RSS/Atom (un par ligne).")
-        st.stop()
-
     articles_rows, links_rows = [], []
-    total_items = 0
-
-    # Lecture de tous les flux
-    feeds_entries = []
-    with st.spinner("Lecture des flux…"):
-        for f in feeds:
-            feed = feedparser.parse(f)
-            entries = list(getattr(feed, "entries", []))[:max_items]
-            feeds_entries.append((f, entries))
-            total_items += len(entries)
-
-    if total_items == 0:
-        st.warning("Aucun item trouvé dans les flux fournis.")
-        st.stop()
-
-    progress = st.progress(0.0)
     status = st.empty()
-    done = 0
+    progress = st.progress(0.0)
 
-    for feed_url, entries in feeds_entries:
-        for entry in entries:
-            art_url = safe_get_article_url(entry)
-            if not art_url:
-                status.write(f"⏭️ {feed_url}: item sans URL d’article")
+    if mode == "Flux RSS":
+        # --- Vérifs & lecture des flux ---
+        if not feeds:
+            st.error("Merci d'indiquer au moins un flux RSS/Atom (un par ligne).")
+            st.stop()
+
+        feeds_entries = []
+        with st.spinner("Lecture des flux…"):
+            for f in feeds:
+                feed = feedparser.parse(f)
+                entries = list(getattr(feed, "entries", []))[:max_items]
+                feeds_entries.append((f, entries))
+
+        total_items = sum(len(es) for _, es in feeds_entries)
+        if total_items == 0:
+            st.warning("Aucun item trouvé dans les flux fournis.")
+            st.stop()
+
+        done = 0
+        for feed_url, entries in feeds_entries:
+            for entry in entries:
+                art_url = safe_get_article_url(entry)
+                if not art_url:
+                    status.write(f"⏭️ {feed_url}: item sans URL d’article")
+                    done += 1
+                    progress.progress(done / total_items)
+                    continue
+                try:
+                    data = parse_article(
+                        art_url,
+                        extern_only=external_only,
+                        only_paragraphs=restrict_to_paragraphs
+                    )
+                    articles_rows.append({
+                        "feed": feed_url,
+                        "article_url": data["article_url"],
+                        "article_title": data["article_title"],
+                        "article_author": data["article_author"],
+                        "article_date": data["article_date"],
+                        "outbound_count": data["outbound_count"],
+                        "outbound_domains": data["outbound_domains"],
+                    })
+                    for l in data["links"]:
+                        links_rows.append({
+                            "feed": feed_url,
+                            "article_url": data["article_url"],
+                            "article_title": data["article_title"],
+                            "out_url": l["url"],
+                            "out_anchor": l["anchor"],
+                            "out_domain": tldextract.extract(l["url"]).registered_domain
+                        })
+                    status.write(f"✅ {feed_url} — {data['article_title'][:80]}… ({data['outbound_count']} lien(s))")
+                except Exception as e:
+                    status.write(f"❌ {feed_url} — {art_url} — {e}")
                 done += 1
                 progress.progress(done / total_items)
-                continue
+                time.sleep(delay_sec)
+
+    else:
+        # --------- Mode Crawl site -----------
+        if not start_url.strip():
+            st.error("Merci de saisir une URL de départ.")
+            st.stop()
+
+        st.write("🔎 Recherche des pages à analyser…")
+        pages = []
+        if use_sitemap_first:
+            pages = fetch_sitemap_urls(start_url, max_urls=int(max_pages))
+        if not pages:
+            pages = crawl_site(start_url, max_pages=int(max_pages), delay=delay_sec)
+
+        if not pages:
+            st.warning("Aucune page trouvée (sitemap inexistant et crawl impossible ?).")
+            st.stop()
+
+        st.write(f"🌐 {len(pages)} page(s) à analyser")
+        for i, url in enumerate(pages, 1):
             try:
                 data = parse_article(
-                    art_url,
+                    url,
                     extern_only=external_only,
                     only_paragraphs=restrict_to_paragraphs
                 )
-                # On ajoute la source du flux
                 articles_rows.append({
-                    "feed": feed_url,
+                    "feed": "(crawl)",
                     "article_url": data["article_url"],
                     "article_title": data["article_title"],
                     "article_author": data["article_author"],
@@ -276,21 +428,20 @@ if run_btn:
                 })
                 for l in data["links"]:
                     links_rows.append({
-                        "feed": feed_url,
+                        "feed": "(crawl)",
                         "article_url": data["article_url"],
                         "article_title": data["article_title"],
                         "out_url": l["url"],
                         "out_anchor": l["anchor"],
                         "out_domain": tldextract.extract(l["url"]).registered_domain
                     })
-                status.write(f"✅ {feed_url} — {data['article_title'][:80]}…  ({data['outbound_count']} lien(s))")
+                status.write(f"✅ {i}/{len(pages)} — {data['article_title'][:80]}… ({data['outbound_count']} lien(s))")
             except Exception as e:
-                status.write(f"❌ {feed_url} — {art_url} — {e}")
-
-            done += 1
-            progress.progress(done / total_items)
+                status.write(f"❌ {i}/{len(pages)} — {url} — {e}")
+            progress.progress(i / len(pages))
             time.sleep(delay_sec)
 
+    # --------- commun aux deux modes ---------
     st.success("Terminé !")
 
     df_articles = pd.DataFrame(articles_rows)
@@ -306,11 +457,10 @@ if run_btn:
             info = fetch_whois(d)  # résultat en cache 12h
             info["out_domain"] = d
             whois_rows.append(info)
-            time.sleep(0.5)  # douceur pour l’API free tier; ajuste si besoin
+            time.sleep(0.5)  # douceur pour l’API free tier
 
         whois_df = pd.DataFrame(whois_rows)
         if not whois_df.empty:
-            # on rajoute les colonnes whois_* dans df_links
             df_links = df_links.merge(whois_df, on="out_domain", how="left")
 
     col1, col2 = st.columns(2)
@@ -333,6 +483,7 @@ if run_btn:
             mime="text/csv"
         )
 
-    st.caption("Astuce : mets autant d’URLs de flux que tu veux (une par ligne).")
+    st.caption("Astuce : en mode Crawl, active d’abord « Tenter le sitemap.xml » : souvent > 100 URLs.")
+
 
    
