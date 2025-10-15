@@ -508,8 +508,7 @@ if run_btn:
         if not whois_df.empty:
             df_links = df_links.merge(whois_df, on="out_domain", how="left")
 
-    col1, col2 = st.columns(2)
-    col1, col2 = st.columns(2)
+   col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Articles")
@@ -534,6 +533,3 @@ with col2:
     )
 
 st.caption("Astuce : en mode Crawl, ajoute des filtres ou limite le nombre d’URLs.")
-
-
-   
