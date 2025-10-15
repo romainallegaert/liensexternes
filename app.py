@@ -510,15 +510,16 @@ if run_btn:
 
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Articles")
-        st.dataframe(df_articles, use_container_width=True, hide_index=True)
-           st.download_button(
+    st.subheader("Articles")
+    st.dataframe(df_articles, use_container_width=True, hide_index=True)
+    st.download_button(
         "⬇️ Télécharger (CSV articles)",
         df_articles.to_csv(index=False).encode("utf-8"),
         file_name="rss_outlinks_by_article.csv",
         mime="text/csv",
-        key="download_articles"  # 👈 clé unique
+        key="download_articles"
     )
+
 with col2:
     st.subheader("Liens sortants (1 ligne par lien)")
     st.dataframe(df_links, use_container_width=True, hide_index=True)
@@ -527,13 +528,11 @@ with col2:
         df_links.to_csv(index=False).encode("utf-8"),
         file_name="rss_outlinks_flat.csv",
         mime="text/csv",
-        key="download_links"  # 👈 autre clé unique
+        key="download_links"
     )
 
+st.caption("Astuce : en mode Crawl, ajoute des filtres ou limite le nombre d’URLs.")
 
-
-
-    st.caption("Astuce : en mode Crawl, active d’abord « Tenter le sitemap.xml » : souvent > 100 URLs.")
 
 
    
