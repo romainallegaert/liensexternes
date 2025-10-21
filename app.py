@@ -1,3 +1,4 @@
+# ================== IMPORTS ==================
 import re, time
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qsl, urlencode
 
@@ -8,22 +9,34 @@ import feedparser
 from bs4 import BeautifulSoup
 import streamlit as st
 
-# 🆕 Ajoute ces imports pour le crawl
+# Crawl / sitemap / robots
 import gzip
-import io
 import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
 import urllib.robotparser as robotparser
 
-import xml.etree.ElementTree as ET
-import gzip
-import xml.etree.ElementTree as ET
-import gzip
+# ================== CONFIG STREAMLIT ==================
+if "page_cfg_done" not in st.session_state:
+    try:
+        st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
+    finally:
+        st.session_state["page_cfg_done"] = True
 
+# ================== PARSER FALLBACK ==================
+PARSER = "lxml"
+try:
+    import lxml  # noqa: F401
+except Exception:
+    PARSER = "html.parser"
+
+# ================== HTTP / USER-AGENT ==================
+UA = "RSS-Outlinks/1.0 (+contact: you@example.com)"
+HEADERS = {"User-Agent": UA}
+
+# ================== SITEMAP HELPERS (global level) ==================
 def parse_sitemap_bytes(content: bytes) -> list[str]:
     """Retourne les URLs d'un sitemap (index ou urlset) à partir de son contenu brut (xml ou gz)."""
     try:
-        # tenter de décompresser si c'est un .gz
+        # si c'est un .gz on tente la décompression
         try:
             content = gzip.decompress(content)
         except Exception:
@@ -52,6 +65,7 @@ def parse_sitemap_bytes(content: bytes) -> list[str]:
         for el in root.findall(f".//{ns}url/{ns}loc"):
             loc = (el.text or "").strip()
             if loc:
+                # clean_url doit exister plus bas dans ton fichier (tu l'as déjà)
                 urls.append(clean_url(loc))
 
         return urls
@@ -75,38 +89,7 @@ def scrape_sitemap_url(sm_url: str, max_urls: int) -> list[str]:
         return out
     except Exception:
         return []
-elif mode == "Sitemap":
-    pages = []
 
-    manual_list = [u.strip() for u in manual_urls_text.splitlines() if u.strip()]
-    if manual_list:
-        pages = manual_list[: int(max_pages)]
-    elif uploaded_sm is not None:
-        pages = parse_sitemap_bytes(uploaded_sm.read())
-        # dédoublonnage + limite
-        seen, tmp = set(), []
-        for u in pages:
-            if u not in seen:
-                seen.add(u)
-                tmp.append(u)
-                if len(tmp) >= int(max_pages):
-                    break
-        pages = tmp
-    elif sitemap_url.strip():
-        pages = scrape_sitemap_url(sitemap_url.strip(), max_urls=int(max_pages))
-# Debug rapide (peut être supprimé après test)
-# st.write("scrape_sitemap_url dispo ?", 'scrape_sitemap_url' in globals())
-
-
-# ---- CONFIG STREAMLIT (one-shot, safe) ----
-if "page_cfg_done" not in st.session_state:
-    try:
-        st.set_page_config(page_title="RSS Outlinks Extractor", page_icon="🔗", layout="wide")
-    finally:
-        # qu'il réussisse ou non, on évite de rappeler set_page_config aux reruns
-        st.session_state["page_cfg_done"] = True
-        # ---- Parser fallback (lxml si dispo, sinon html.parser) ----
-PARSER = "lxml"
 try:
     import lxml  # noqa: F401  # si lxml est installé, on l'utilise (plus rapide)
 except Exception:
