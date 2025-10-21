@@ -119,6 +119,11 @@ with st.sidebar:
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
 
     run_btn = st.button("Analyser")
+# Normalise la variable feeds selon le mode
+if mode == "Flux RSS":
+    feeds = [u.strip() for u in feeds_text.splitlines() if u.strip()]
+else:
+    feeds = []
 
 
 UA = "RSS-Outlinks/1.0 (+contact: you@example.com)"
