@@ -17,6 +17,85 @@ import urllib.robotparser as robotparser
 
 import xml.etree.ElementTree as ET
 import gzip
+import xml.etree.ElementTree as ET
+import gzip
+
+def parse_sitemap_bytes(content: bytes) -> list[str]:
+    """Retourne les URLs d'un sitemap (index ou urlset) à partir de son contenu brut (xml ou gz)."""
+    try:
+        # tenter de décompresser si c'est un .gz
+        try:
+            content = gzip.decompress(content)
+        except Exception:
+            pass
+
+        root = ET.fromstring(content)
+        ns = ""
+        if root.tag.startswith("{"):
+            ns = root.tag.split("}")[0] + "}"
+
+        urls = []
+
+        # sitemap index -> récursion
+        for el in root.findall(f".//{ns}sitemap/{ns}loc"):
+            loc = (el.text or "").strip()
+            if not loc:
+                continue
+            try:
+                r = requests.get(loc, headers=HEADERS, timeout=20)
+                r.raise_for_status()
+                urls.extend(parse_sitemap_bytes(r.content))
+            except Exception:
+                pass
+
+        # urlset direct
+        for el in root.findall(f".//{ns}url/{ns}loc"):
+            loc = (el.text or "").strip()
+            if loc:
+                urls.append(clean_url(loc))
+
+        return urls
+    except Exception:
+        return []
+
+def scrape_sitemap_url(sm_url: str, max_urls: int) -> list[str]:
+    """Télécharge une sitemap (xml ou gz) et renvoie jusqu'à max_urls URLs dédupliquées."""
+    try:
+        resp = requests.get(sm_url, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        all_urls = parse_sitemap_bytes(resp.content)
+        # dédoublonnage + limite
+        out, seen = [], set()
+        for u in all_urls:
+            if u not in seen:
+                seen.add(u)
+                out.append(u)
+                if len(out) >= max_urls:
+                    break
+        return out
+    except Exception:
+        return []
+elif mode == "Sitemap":
+    pages = []
+
+    manual_list = [u.strip() for u in manual_urls_text.splitlines() if u.strip()]
+    if manual_list:
+        pages = manual_list[: int(max_pages)]
+    elif uploaded_sm is not None:
+        pages = parse_sitemap_bytes(uploaded_sm.read())
+        # dédoublonnage + limite
+        seen, tmp = set(), []
+        for u in pages:
+            if u not in seen:
+                seen.add(u)
+                tmp.append(u)
+                if len(tmp) >= int(max_pages):
+                    break
+        pages = tmp
+    elif sitemap_url.strip():
+        pages = scrape_sitemap_url(sitemap_url.strip(), max_urls=int(max_pages))
+# Debug rapide (peut être supprimé après test)
+# st.write("scrape_sitemap_url dispo ?", 'scrape_sitemap_url' in globals())
 
 
 # ---- CONFIG STREAMLIT (one-shot, safe) ----
