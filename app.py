@@ -72,6 +72,14 @@ def parse_sitemap_bytes(content: bytes) -> list[str]:
     except Exception:
         return []
 
+DEFAULT_BLOCKED_DOMAINS = {
+    "instagram.com", "facebook.com", "fb.com", "twitter.com", "x.com", "t.co",
+    "linkedin.com", "youtube.com", "youtu.be", "pinterest.com", "tiktok.com",
+    "snapchat.com", "threads.net", "mastodon.social", "bluesky.social",
+    "reddit.com", "discord.gg", "discord.com"
+}
+
+
 def scrape_sitemap_url(sm_url: str, max_urls: int) -> list[str]:
     """Télécharge une sitemap (xml ou gz) et renvoie jusqu'à max_urls URLs dédupliquées."""
     try:
@@ -105,6 +113,7 @@ except Exception:
 WHOIS_API_KEY = "at_5fF73TnhIdy94u3UCHB7N3rn1UGSi"
 WHOIS_BASE = "https://www.whoisxmlapi.com/whoisserver/WhoisService"
 st.caption(f"DBG WHOIS key loaded: {'yes' if 'WHOIS_API_KEY' in globals() and WHOIS_API_KEY else 'no'}")
+
 
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
@@ -179,6 +188,14 @@ with st.sidebar:
     delay_sec = st.slider("Pause entre pages (politesse)", 0.0, 5.0, 1.0, 0.5)
     external_only = st.checkbox("Garder uniquement les liens externes", value=True)
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
+
+    exclude_social = st.checkbox("Exclure liens de réseaux sociaux", value=True)
+extra_blocked = st.text_area(
+    "Domaines à exclure (optionnel, un par ligne)",
+    value="",
+    height=80,
+)
+
 
     run_btn = st.button("Analyser")
 # Normalise la variable feeds selon le mode
@@ -521,6 +538,35 @@ if run_btn:
 
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
+    # --- Filtrage réseaux sociaux + domaines extra ---
+if exclude_social and not df_links.empty:
+    user_blocked = {d.strip().lower() for d in extra_blocked.splitlines() if d.strip()}
+    blocked = DEFAULT_BLOCKED_DOMAINS | user_blocked
+
+    # supprime les lignes dont le domaine est dans la liste bloquée
+    if "out_domain" in df_links.columns:
+        df_links = df_links[~df_links["out_domain"].str.lower().isin(blocked)]
+
+    # Recalcule les compteurs/domains par article après filtrage
+    if not df_links.empty:
+        agg = (
+            df_links.groupby("article_url")
+            .agg(
+                outbound_count=("out_url", "count"),
+                outbound_domains=("out_domain", lambda s: "; ".join(sorted(set(s))))
+            )
+            .reset_index()
+        )
+    else:
+        agg = pd.DataFrame(columns=["article_url", "outbound_count", "outbound_domains"])
+
+    if not df_articles.empty:
+        df_articles = (
+            df_articles.drop(columns=["outbound_count", "outbound_domains"], errors="ignore")
+            .merge(agg, on="article_url", how="left")
+            .fillna({"outbound_count": 0, "outbound_domains": ""})
+        )
+
 
     # (WHOIS) une seule fois, ici
     if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
