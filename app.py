@@ -168,7 +168,6 @@ st.title("🔗 RSS Outlinks Extractor")
 st.caption("Analyse un flux RSS/Atom, ouvre chaque article et extrait les liens sortants du texte.")
 
 with st.sidebar:
-    
     st.header("Paramètres")
 
     mode = st.radio("Mode d’analyse", ["Flux RSS", "Sitemap"], index=0)
@@ -180,24 +179,38 @@ with st.sidebar:
         )
         max_items = st.number_input("Nombre max d'articles par flux", 1, 1000, 50, 1)
     else:
-        sitemap_url = st.text_input("URL de la sitemap (xml ou gz)", value="https://lesdjadjas.fr/sitemap.xml")
-        uploaded_sm = st.file_uploader("…ou dépose le fichier sitemap (xml / gz)", type=["xml", "gz"], accept_multiple_files=False)
-        manual_urls_text = st.text_area("…ou colle directement une liste d’URLs (une par ligne)", value="", height=120)
-        max_pages = st.number_input("Nombre max d’URLs à analyser", 10, 20000, 300, 10)
+        sitemap_url = st.text_input(
+            "URL de la sitemap (xml ou gz)",
+            value="https://lesdjadjas.fr/sitemap.xml"
+        )
+        uploaded_sm = st.file_uploader(
+            "…ou dépose le fichier sitemap (xml / gz)",
+            type=["xml", "gz"],
+            accept_multiple_files=False
+        )
+        manual_urls_text = st.text_area(
+            "…ou colle directement une liste d’URLs (une par ligne)",
+            value="",
+            height=120
+        )
+        max_pages = st.number_input(
+            "Nombre max d’URLs à analyser", 10, 20000, 300, 10
+        )
 
     delay_sec = st.slider("Pause entre pages (politesse)", 0.0, 5.0, 1.0, 0.5)
     external_only = st.checkbox("Garder uniquement les liens externes", value=True)
     restrict_to_paragraphs = st.checkbox("Ne garder que les liens dans les <p>", value=True)
 
+    # 🔽 Options de filtrage (corrigé)
     exclude_social = st.checkbox("Exclure liens de réseaux sociaux", value=True)
-extra_blocked = st.text_area(
-    "Domaines à exclure (optionnel, un par ligne)",
-    value="",
-    height=80,
-)
-
+    extra_blocked = st.text_area(
+        "Domaines à exclure (optionnel, un par ligne)",
+        value="",
+        height=80,
+    )
 
     run_btn = st.button("Analyser")
+
 # Normalise la variable feeds selon le mode
 if mode == "Flux RSS":
     feeds = [u.strip() for u in feeds_text.splitlines() if u.strip()]
