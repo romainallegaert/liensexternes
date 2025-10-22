@@ -546,56 +546,58 @@ if run_btn:
             progress.progress(i / len(pages))
             time.sleep(delay_sec)
 
-    # --------- Commun (WHOIS + tableaux/CSV) ----------
+        # --------- Commun (WHOIS + tableaux/CSV) ----------
     st.success("Terminé !")
 
+    # 1) DataFrames
     df_articles = pd.DataFrame(articles_rows)
     df_links = pd.DataFrame(links_rows)
-    # --- Filtrage réseaux sociaux + domaines extra ---
-if exclude_social and not df_links.empty:
-    user_blocked = {d.strip().lower() for d in extra_blocked.splitlines() if d.strip()}
-    blocked = DEFAULT_BLOCKED_DOMAINS | user_blocked
 
-    # supprime les lignes dont le domaine est dans la liste bloquée
-    if "out_domain" in df_links.columns:
-        df_links = df_links[~df_links["out_domain"].str.lower().isin(blocked)]
+    # 2) Filtrage réseaux sociaux / domaines exclus (optionnel)
+    if exclude_social and not df_links.empty:
+        user_blocked = {d.strip().lower() for d in extra_blocked.splitlines() if d.strip()}
+        blocked = DEFAULT_BLOCKED_DOMAINS | user_blocked
 
-    # Recalcule les compteurs/domains par article après filtrage
-    if not df_links.empty:
-        agg = (
-            df_links.groupby("article_url")
-            .agg(
-                outbound_count=("out_url", "count"),
-                outbound_domains=("out_domain", lambda s: "; ".join(sorted(set(s))))
+        if "out_domain" in df_links.columns:
+            df_links = df_links[~df_links["out_domain"].str.lower().isin(blocked)]
+
+        # Recalcule compteurs/domains par article après filtrage
+        if not df_links.empty:
+            agg = (
+                df_links.groupby("article_url")
+                .agg(
+                    outbound_count=("out_url", "count"),
+                    outbound_domains=("out_domain", lambda s: "; ".join(sorted(set(s))))
+                )
+                .reset_index()
             )
-            .reset_index()
-        )
-    else:
-        agg = pd.DataFrame(columns=["article_url", "outbound_count", "outbound_domains"])
+        else:
+            agg = pd.DataFrame(columns=["article_url", "outbound_count", "outbound_domains"])
 
-    if not df_articles.empty:
-        df_articles = (
-            df_articles.drop(columns=["outbound_count", "outbound_domains"], errors="ignore")
-            .merge(agg, on="article_url", how="left")
-            .fillna({"outbound_count": 0, "outbound_domains": ""})
-        )
+        if not df_articles.empty:
+            df_articles = (
+                df_articles.drop(columns=["outbound_count", "outbound_domains"], errors="ignore")
+                .merge(agg, on="article_url", how="left")
+                .fillna({"outbound_count": 0, "outbound_domains": ""})
+            )
 
-
-    # (WHOIS) une seule fois, ici
+    # 3) Enrichissement WHOIS (optionnel)
     if WHOIS_API_KEY and not df_links.empty and "out_domain" in df_links.columns:
         st.info("🔍 Enrichissement WHOIS… (1 requête par domaine unique)")
         unique_domains = sorted(df_links["out_domain"].dropna().unique().tolist())
+
         whois_rows = []
         for d in unique_domains:
             info = fetch_whois(d)
             info["out_domain"] = d
             whois_rows.append(info)
-            time.sleep(0.5)
+            time.sleep(0.5)  # politesse API
+
         whois_df = pd.DataFrame(whois_rows)
         if not whois_df.empty:
             df_links = df_links.merge(whois_df, on="out_domain", how="left")
 
-    # ==== Affichage final ====
+    # 4) Affichage + téléchargements
     col1, col2 = st.columns(2)
 
     with col1:
@@ -620,4 +622,5 @@ if exclude_social and not df_links.empty:
             key="download_links"
         )
 
-    st.caption("Astuce : en mode Sitemap, colle une *liste d’URLs* si tu veux cibler une catégorie précise.")
+    st.caption("Astuce : utilise le filtre de domaines pour exclure les RS, affiliés, etc.")
+
